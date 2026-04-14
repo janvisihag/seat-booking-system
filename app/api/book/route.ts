@@ -63,8 +63,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validation.reason }, { status: 400 });
     }
 
-    // Check if seat is already booked for this date
-    const { data: existingBooking, error: checkError } = await supabase
+    // Check if seat is already booked for this date (only active bookings)
+    const { data: existingBooking } = await supabase
       .from('bookings')
       .select('*')
       .eq('seat_id', seat_id)
@@ -75,6 +75,15 @@ export async function POST(request: NextRequest) {
     if (existingBooking) {
       return NextResponse.json({ error: 'Seat already booked for this date' }, { status: 400 });
     }
+
+    // Check if there's a released booking for this seat and date
+    const { data: releasedBooking } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('seat_id', seat_id)
+      .eq('date', date)
+      .eq('status', 'released')
+      .single();
 
     // Check user permissions for this seat
     const { data: seat } = await supabase.from('seats').select('*').eq('id', seat_id).single();
@@ -91,19 +100,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create booking
-    const { data: newBooking, error: bookError } = await supabase
-      .from('bookings')
-      .insert({
-        user_id,
-        seat_id,
-        date,
-        status: 'booked',
-      })
-      .select()
-      .single();
+    let newBooking;
 
-    if (bookError) throw bookError;
+    // If there's a released booking, update it instead of creating new
+    if (releasedBooking) {
+      const { data: updatedBooking, error: updateError } = await supabase
+        .from('bookings')
+        .update({
+          user_id,
+          status: 'booked',
+        })
+        .eq('id', releasedBooking.id)
+        .select()
+        .single();
+
+      if (updateError) throw updateError;
+      newBooking = updatedBooking;
+    } else {
+      // Create new booking
+      const { data: createdBooking, error: bookError } = await supabase
+        .from('bookings')
+        .insert({
+          user_id,
+          seat_id,
+          date,
+          status: 'booked',
+        })
+        .select()
+        .single();
+
+      if (bookError) throw bookError;
+      newBooking = createdBooking;
+    }
 
     return NextResponse.json(
       {
