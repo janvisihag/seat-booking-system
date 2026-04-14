@@ -30,6 +30,21 @@ interface Holiday {
   date: string;
 }
 
+interface SquadMember {
+  id: string;
+  name: string;
+  squad_id: number;
+  batch: number;
+}
+
+interface Squad {
+  squad_id: number;
+  members: SquadMember[];
+  member_count: number;
+  batch1_count: number;
+  batch2_count: number;
+}
+
 export default function Dashboard() {
   const { selectedUser, setSelectedUser } = useUser();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -37,6 +52,7 @@ export default function Dashboard() {
   const [dateStats, setDateStats] = useState<Record<string, DateCard>>({});
   const [seats, setSeats] = useState<Seat[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [squads, setSquads] = useState<Squad[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentWeek, setCurrentWeek] = useState<Date | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -61,6 +77,20 @@ export default function Dashboard() {
       }
     };
     fetchHolidays();
+  }, []);
+
+  // Fetch squads
+  useEffect(() => {
+    const fetchSquads = async () => {
+      try {
+        const res = await fetch('/api/squads');
+        const data = await res.json();
+        setSquads(data.squads || []);
+      } catch (error) {
+        console.error('Error fetching squads:', error);
+      }
+    };
+    fetchSquads();
   }, []);
 
   // Fetch date statistics when currentWeek changes
@@ -458,44 +488,71 @@ export default function Dashboard() {
               </div>
 
               <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
-                {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'].map((squad, index) => {
-                  const memberCounts = [8, 6, 7, 9, 8, 7, 8, 6, 9, 7];
-                  const seatRanges = [
-                    '1-8', '9-16', '17-24', '25-32', '33-40',
-                    '41-48', '49-56', '57-64', '65-72', '73-80'
-                  ];
-                  const squadNumber = index + 1;
-                  
-                  return (
-                    <div key={squad} className="border border-gray-200 rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm font-medium text-gray-900">Squad {squad}</h4>
-                        <span className="px-2 py-0.5 bg-cyan-500 text-white text-xs rounded-full font-medium">
-                          Batch {index < 5 ? '1' : '2'}
-                        </span>
-                      </div>
-                      
-                      <div className="grid grid-cols-5 gap-1 mb-2">
-                        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((day, dayIndex) => (
-                          <div
-                            key={day}
-                            className={`text-xs text-center py-1 rounded font-medium ${
-                              (index < 5 && dayIndex < 3) || (index >= 5 && dayIndex >= 3)
-                                ? 'bg-cyan-100 text-cyan-700'
-                                : 'bg-gray-100 text-gray-500'
-                            }`}
-                          >
-                            {day}
+                {squads.length > 0 ? (
+                  squads.map((squad) => {
+                    const seatRanges = [
+                      '1-4', '5-8', '9-12', '13-16', '17-20',
+                      '21-24', '25-28', '29-32', '33-36', '37-40'
+                    ];
+                    const seatRange = seatRanges[squad.squad_id - 1];
+                    
+                    // Calculate user range based on squad
+                    const startUser = (squad.squad_id - 1) * 8 + 1;
+                    const endUser = squad.squad_id * 8;
+                    const userRange = `User ${startUser}-${endUser}`;
+                    
+                    return (
+                      <div key={squad.squad_id} className="border border-gray-200 rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-medium text-gray-900">Squad {squad.squad_id}</h4>
+                          <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded-full font-medium">
+                            {squad.member_count} members
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-5 gap-1 mb-2">
+                          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((day, dayIndex) => {
+                            // Batch 1: Mon-Wed (Week 1), Thu-Fri (Week 2)
+                            // Batch 2: Thu-Fri (Week 1), Mon-Wed (Week 2)
+                            // For Week 1 display:
+                            const isBatch1Day = dayIndex < 3; // Mon-Wed
+                            const isBatch2Day = dayIndex >= 3; // Thu-Fri
+                            
+                            return (
+                              <div
+                                key={day}
+                                className={`text-xs text-center py-1 rounded font-medium ${
+                                  isBatch1Day
+                                    ? 'bg-blue-100 text-blue-700'
+                                    : 'bg-green-100 text-green-700'
+                                }`}
+                              >
+                                {day}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        
+                        <div className="text-xs text-gray-600 space-y-1">
+                          <div>Seats: {seatRange}</div>
+                          <div>Members: {userRange}</div>
+                          <div className="flex gap-2 mt-1">
+                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+                              B1: {squad.batch1_count}
+                            </span>
+                            <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs">
+                              B2: {squad.batch2_count}
+                            </span>
                           </div>
-                        ))}
+                        </div>
                       </div>
-                      
-                      <div className="text-xs text-gray-600">
-                        Seats: {seatRanges[index]} • {memberCounts[index]} members
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-4 text-gray-500 text-sm">
+                    Loading squads...
+                  </div>
+                )}
               </div>
             </div>
           </div>

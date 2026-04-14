@@ -43,63 +43,51 @@ CREATE INDEX idx_bookings_seat_date ON bookings(seat_id, date);
 CREATE INDEX idx_bookings_status ON bookings(status);
 CREATE INDEX idx_holidays_date ON holidays(date);
 
--- Insert designated seats (80 total - 8 seats per squad × 10 squads)
+-- Insert designated seats (40 total - 4 seats per squad × 10 squads)
 -- Squad 1
 INSERT INTO seats (id, type, squad_id) VALUES
-(1, 'designated', 1), (2, 'designated', 1), (3, 'designated', 1), (4, 'designated', 1), 
-(5, 'designated', 1), (6, 'designated', 1), (7, 'designated', 1), (8, 'designated', 1);
+(1, 'designated', 1), (2, 'designated', 1), (3, 'designated', 1), (4, 'designated', 1);
 
 -- Squad 2
 INSERT INTO seats (id, type, squad_id) VALUES
-(9, 'designated', 2), (10, 'designated', 2), (11, 'designated', 2), (12, 'designated', 2),
-(13, 'designated', 2), (14, 'designated', 2), (15, 'designated', 2), (16, 'designated', 2);
+(5, 'designated', 2), (6, 'designated', 2), (7, 'designated', 2), (8, 'designated', 2);
 
 -- Squad 3
 INSERT INTO seats (id, type, squad_id) VALUES
-(17, 'designated', 3), (18, 'designated', 3), (19, 'designated', 3), (20, 'designated', 3),
-(21, 'designated', 3), (22, 'designated', 3), (23, 'designated', 3), (24, 'designated', 3);
+(9, 'designated', 3), (10, 'designated', 3), (11, 'designated', 3), (12, 'designated', 3);
 
 -- Squad 4
 INSERT INTO seats (id, type, squad_id) VALUES
-(25, 'designated', 4), (26, 'designated', 4), (27, 'designated', 4), (28, 'designated', 4),
-(29, 'designated', 4), (30, 'designated', 4), (31, 'designated', 4), (32, 'designated', 4);
+(13, 'designated', 4), (14, 'designated', 4), (15, 'designated', 4), (16, 'designated', 4);
 
 -- Squad 5
 INSERT INTO seats (id, type, squad_id) VALUES
-(33, 'designated', 5), (34, 'designated', 5), (35, 'designated', 5), (36, 'designated', 5),
-(37, 'designated', 5), (38, 'designated', 5), (39, 'designated', 5), (40, 'designated', 5);
+(17, 'designated', 5), (18, 'designated', 5), (19, 'designated', 5), (20, 'designated', 5);
 
 -- Squad 6
 INSERT INTO seats (id, type, squad_id) VALUES
-(41, 'designated', 6), (42, 'designated', 6), (43, 'designated', 6), (44, 'designated', 6),
-(45, 'designated', 6), (46, 'designated', 6), (47, 'designated', 6), (48, 'designated', 6);
+(21, 'designated', 6), (22, 'designated', 6), (23, 'designated', 6), (24, 'designated', 6);
 
 -- Squad 7
 INSERT INTO seats (id, type, squad_id) VALUES
-(49, 'designated', 7), (50, 'designated', 7), (51, 'designated', 7), (52, 'designated', 7),
-(53, 'designated', 7), (54, 'designated', 7), (55, 'designated', 7), (56, 'designated', 7);
+(25, 'designated', 7), (26, 'designated', 7), (27, 'designated', 7), (28, 'designated', 7);
 
 -- Squad 8
 INSERT INTO seats (id, type, squad_id) VALUES
-(57, 'designated', 8), (58, 'designated', 8), (59, 'designated', 8), (60, 'designated', 8),
-(61, 'designated', 8), (62, 'designated', 8), (63, 'designated', 8), (64, 'designated', 8);
+(29, 'designated', 8), (30, 'designated', 8), (31, 'designated', 8), (32, 'designated', 8);
 
 -- Squad 9
 INSERT INTO seats (id, type, squad_id) VALUES
-(65, 'designated', 9), (66, 'designated', 9), (67, 'designated', 9), (68, 'designated', 9),
-(69, 'designated', 9), (70, 'designated', 9), (71, 'designated', 9), (72, 'designated', 9);
+(33, 'designated', 9), (34, 'designated', 9), (35, 'designated', 9), (36, 'designated', 9);
 
 -- Squad 10
 INSERT INTO seats (id, type, squad_id) VALUES
-(73, 'designated', 10), (74, 'designated', 10), (75, 'designated', 10), (76, 'designated', 10),
-(77, 'designated', 10), (78, 'designated', 10), (79, 'designated', 10), (80, 'designated', 10);
+(37, 'designated', 10), (38, 'designated', 10), (39, 'designated', 10), (40, 'designated', 10);
 
--- Insert floater seats (20 total for flexibility)
+-- Insert floater seats (10 total for flexibility)
 INSERT INTO seats (id, type, squad_id) VALUES
-(81, 'floater', NULL), (82, 'floater', NULL), (83, 'floater', NULL), (84, 'floater', NULL), (85, 'floater', NULL),
-(86, 'floater', NULL), (87, 'floater', NULL), (88, 'floater', NULL), (89, 'floater', NULL), (90, 'floater', NULL),
-(91, 'floater', NULL), (92, 'floater', NULL), (93, 'floater', NULL), (94, 'floater', NULL), (95, 'floater', NULL),
-(96, 'floater', NULL), (97, 'floater', NULL), (98, 'floater', NULL), (99, 'floater', NULL), (100, 'floater', NULL);
+(41, 'floater', NULL), (42, 'floater', NULL), (43, 'floater', NULL), (44, 'floater', NULL), (45, 'floater', NULL),
+(46, 'floater', NULL), (47, 'floater', NULL), (48, 'floater', NULL), (49, 'floater', NULL), (50, 'floater', NULL);
 
 -- Insert 80 sample users (10 squads × 8 members each)
 -- Squad 1 - Batch 1 (4 members), Batch 2 (4 members)
