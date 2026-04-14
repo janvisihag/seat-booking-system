@@ -6,7 +6,6 @@ interface BookRequest {
   user_id: string;
   seat_id: number;
   date: string;
-  booking_time?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -32,17 +31,48 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Check if user already has a booking for this date
-    const { data: userDayBooking } = await supabase
-      .from('bookings')
+    // Check if auto-allocation has been done for this date
+    // Floater seats can only be booked AFTER auto-allocation is complete
+    const { data: autoLock } = await supabase
+      .from('auto_locks')
+      .select('*')
+      .eq('locked_day', date)
+      .single();
+
+    if (!autoLock) {
+      return NextResponse.json(
+        { error: 'Floater seats can only be booked after 3 PM auto-allocation is complete for this date.' },
+        { status: 400 }
+      );
+    }
+
+    // Check if user already has a booking for this date (check both tables)
+    const { data: allocation } = await supabase
+      .from('seat_allocations')
       .select('*')
       .eq('user_id', user_id)
       .eq('date', date)
-      .eq('status', 'booked');
+      .eq('status', 'allocated')
+      .single();
 
-    if (userDayBooking && userDayBooking.length > 0) {
+    const { data: floaterBooking } = await supabase
+      .from('floater_bookings')
+      .select('*')
+      .eq('user_id', user_id)
+      .eq('date', date)
+      .eq('status', 'booked')
+      .single();
+
+    if (allocation) {
       return NextResponse.json(
-        { error: 'You already have a booking for this date. A user can only book one seat per day.' },
+        { error: 'You already have a designated seat allocated for this date. You cannot book a floater seat.' },
+        { status: 400 }
+      );
+    }
+
+    if (floaterBooking) {
+      return NextResponse.json(
+        { error: 'You already have a floater seat booked for this date.' },
         { status: 400 }
       );
     }
@@ -63,74 +93,69 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validation.reason }, { status: 400 });
     }
 
-    // Check if seat is already booked for this date (only active bookings)
-    const { data: existingBooking } = await supabase
-      .from('bookings')
+    // Get seat info
+    const { data: seat } = await supabase
+      .from('seats')
+      .select('*')
+      .eq('id', seat_id)
+      .single();
+
+    if (!seat) {
+      return NextResponse.json({ error: 'Seat not found' }, { status: 404 });
+    }
+
+    // Check if seat is already booked (check both tables)
+    const { data: existingAllocation } = await supabase
+      .from('seat_allocations')
+      .select('*')
+      .eq('seat_id', seat_id)
+      .eq('date', date)
+      .eq('status', 'allocated')
+      .single();
+
+    const { data: existingFloaterBooking } = await supabase
+      .from('floater_bookings')
       .select('*')
       .eq('seat_id', seat_id)
       .eq('date', date)
       .eq('status', 'booked')
       .single();
 
-    if (existingBooking) {
+    if (existingAllocation || existingFloaterBooking) {
       return NextResponse.json({ error: 'Seat already booked for this date' }, { status: 400 });
     }
 
-    // Check if there's a released booking for this seat and date
-    const { data: releasedBooking } = await supabase
-      .from('bookings')
+    // Check if seat is blocked
+    const { data: blocked } = await supabase
+      .from('seat_blocking')
       .select('*')
       .eq('seat_id', seat_id)
       .eq('date', date)
-      .eq('status', 'released')
       .single();
 
-    // Check user permissions for this seat
-    const { data: seat } = await supabase.from('seats').select('*').eq('id', seat_id).single();
-
-    if (!seat) {
-      return NextResponse.json({ error: 'Seat not found' }, { status: 404 });
+    if (blocked) {
+      return NextResponse.json({ error: 'Seat is blocked for this date' }, { status: 400 });
     }
 
-    // If seat is designated, user must be from that squad
-    if (seat.type === 'designated' && seat.squad_id !== user.squad_id) {
-      return NextResponse.json(
-        { error: 'You cannot book seats designated for other squads' },
-        { status: 400 }
-      );
-    }
+    // Book the seat in floater_bookings table
+    // This includes:
+    // 1. Floater seats (81-90)
+    // 2. Released designated seats (1-80 that were cancelled by users)
+    // Any available seat can be booked after auto-allocation
+    const { data: newBooking, error: bookError } = await supabase
+      .from('floater_bookings')
+      .insert({
+        user_id,
+        seat_id,
+        date,
+        status: 'booked',
+      })
+      .select()
+      .single();
 
-    let newBooking;
-
-    // If there's a released booking, update it instead of creating new
-    if (releasedBooking) {
-      const { data: updatedBooking, error: updateError } = await supabase
-        .from('bookings')
-        .update({
-          user_id,
-          status: 'booked',
-        })
-        .eq('id', releasedBooking.id)
-        .select()
-        .single();
-
-      if (updateError) throw updateError;
-      newBooking = updatedBooking;
-    } else {
-      // Create new booking
-      const { data: createdBooking, error: bookError } = await supabase
-        .from('bookings')
-        .insert({
-          user_id,
-          seat_id,
-          date,
-          status: 'booked',
-        })
-        .select()
-        .single();
-
-      if (bookError) throw bookError;
-      newBooking = createdBooking;
+    if (bookError) {
+      console.error('Error booking seat:', bookError);
+      throw bookError;
     }
 
     return NextResponse.json(

@@ -1,11 +1,15 @@
-'use client';
+"use client";
 
 interface Seat {
   id: number;
-  type: 'designated' | 'floater';
+  seat_number: number;
+  type: "designated" | "floater";
   squad_id: number | null;
-  is_booked: boolean;
-  booking_id?: string;
+  status: "allocated" | "available" | "blocked" | "booked";
+  user?: {
+    id: string;
+    squad_id?: number;
+  };
 }
 
 interface SeatGridProps {
@@ -17,25 +21,55 @@ interface SeatGridProps {
   isHoliday?: boolean;
 }
 
-export function SeatGrid({ seats, onSeatClick, selectedSeat, isLoading, userSquad, isHoliday }: SeatGridProps) {
+export function SeatGrid({
+  seats,
+  onSeatClick,
+  selectedSeat,
+  isLoading,
+  userSquad,
+  isHoliday,
+}: SeatGridProps) {
   const getSeatColor = (seat: Seat): string => {
-    if (seat.is_booked) return 'bg-red-200 border-red-300 text-red-900';
-    if (seat.type === 'floater') return 'bg-green-200 border-green-300 text-green-900';
-    // Designated seats - different shades based on squad
-    if (seat.squad_id === userSquad) {
-      return 'bg-blue-200 border-blue-300 text-blue-900';
+    // Allocated/Booked seats - RED
+    if (seat.status === "allocated" || seat.status === "booked") {
+      return "bg-red-200 border-red-300 text-red-900";
     }
-    return 'bg-gray-200 border-gray-300 text-gray-600';
+
+    // Blocked seats - YELLOW (released/vacated/cancelled)
+    if (seat.status === "blocked") {
+      return "bg-yellow-200 border-yellow-300 text-yellow-900";
+    }
+
+    // Available seats - GREEN (can be booked)
+    if (seat.status === "available") {
+      return "bg-green-200 border-green-300 text-green-900";
+    }
+
+    // Default - GREEN (available)
+    return "bg-green-200 border-green-300 text-green-900";
   };
 
   const canBookSeat = (seat: Seat): boolean => {
-    if (seat.is_booked) return false;
-    if (seat.type === 'floater') return true;
-    if (userSquad && seat.squad_id === userSquad) return true;
+    // Seats that are already allocated or booked cannot be booked
+    if (seat.status === "allocated" || seat.status === "booked") return false;
+
+    // Blocked seats cannot be booked
+    if (seat.status === "blocked") return false;
+
+    // Available seats (both floater and released designated) can be booked
+    if (seat.status === "available") return true;
+
     return false;
   };
 
   const getSeatLabel = (seat: Seat): string => {
+    // For floater seats, show F/B/C
+    if (seat.type === "floater") {
+      if (seat.status === "booked") return "B";
+      if (seat.status === "blocked") return "C";
+      return "F";
+    }
+    // For designated seats, show seat number
     return seat.id.toString();
   };
 
@@ -43,13 +77,16 @@ export function SeatGrid({ seats, onSeatClick, selectedSeat, isLoading, userSqua
   const createSeatGrid = () => {
     // Ensure we have enough seats
     const allSeats = [...seats];
-    
+
     const rows = [
-      { label: 'Row 1', seats: allSeats.slice(0, 10) },
-      { label: 'Row 2', seats: allSeats.slice(10, 20) },
-      { label: 'Row 3', seats: allSeats.slice(20, 30) },
-      { label: 'Row 4', seats: allSeats.slice(30, 40) },
-      { label: 'Floater', seats: allSeats.filter(s => s.type === 'floater').slice(0, 10) },
+      { label: "Row 1", seats: allSeats.slice(0, 10) },
+      { label: "Row 2", seats: allSeats.slice(10, 20) },
+      { label: "Row 3", seats: allSeats.slice(20, 30) },
+      { label: "Row 4", seats: allSeats.slice(30, 40) },
+      {
+        label: "Floater",
+        seats: allSeats.filter((s) => s.type === "floater").slice(0, 10),
+      },
     ];
 
     return rows;
@@ -74,13 +111,16 @@ export function SeatGrid({ seats, onSeatClick, selectedSeat, isLoading, userSqua
       {isHoliday && (
         <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center shrink-0">
               <span className="text-2xl">🎉</span>
             </div>
             <div>
-              <div className="font-semibold text-red-900 mb-1">Holiday - Booking Not Available</div>
+              <div className="font-semibold text-red-900 mb-1">
+                Holiday - Booking Not Available
+              </div>
               <div className="text-sm text-red-700">
-                This date is marked as a holiday. Seat booking is not allowed on holidays.
+                This date is marked as a holiday. Seat booking is not allowed on
+                holidays.
               </div>
             </div>
           </div>
@@ -95,22 +135,32 @@ export function SeatGrid({ seats, onSeatClick, selectedSeat, isLoading, userSqua
         </div>
         <ul className="text-sm text-blue-800 space-y-1.5 ml-6">
           <li className="list-disc">
-            <strong>Designated Seats (Blue):</strong> Only members of the assigned squad can book these seats
+            <strong>Designated Seats:</strong> Auto-allocated daily at 3 PM to
+            scheduled squads (shown in red when allocated)
           </li>
           <li className="list-disc">
-            <strong>Floater Seats (Green):</strong> Available to all users regardless of squad assignment
+            <strong>Released Seats:</strong> When users cancel their designated
+            seats, they become available for anyone to book (turn green)
           </li>
           <li className="list-disc">
-            <strong>Batch Schedule:</strong> Users can only book on their designated batch days (Week 1/Week 2 cycle)
+            <strong>Floater Seats (F):</strong> Always available for manual
+            booking after 3 PM auto-allocation (shown in green)
           </li>
           <li className="list-disc">
-            <strong>Booking Window:</strong> Bookings can be made from today onwards, past dates are not available
+            <strong>Blocked Seats:</strong> Seats for non-scheduled squads are
+            blocked (shown in yellow)
           </li>
           <li className="list-disc">
-            <strong>Holidays:</strong> Seat booking is disabled on official holidays
+            <strong>Booking Window:</strong> Manual booking allowed ONLY after 3
+            PM auto-allocation is complete
           </li>
           <li className="list-disc">
-            <strong>One Seat Per Day:</strong> Each user can book only one seat per day
+            <strong>Eligibility:</strong> Only users WITHOUT a designated seat
+            can book available seats
+          </li>
+          <li className="list-disc">
+            <strong>One Seat Per Day:</strong> Each user gets only one seat per
+            day (designated OR manually booked)
           </li>
         </ul>
       </div>
@@ -124,10 +174,10 @@ export function SeatGrid({ seats, onSeatClick, selectedSeat, isLoading, userSqua
           <div className="flex gap-2 flex-wrap">
             {row.seats.map((seat) => {
               if (!seat) return null;
-              
+
               const isSelected = selectedSeat?.id === seat.id;
               const isBookable = !isHoliday && canBookSeat(seat);
-              
+
               return (
                 <button
                   key={seat.id}
@@ -136,12 +186,12 @@ export function SeatGrid({ seats, onSeatClick, selectedSeat, isLoading, userSqua
                   className={`
                     w-12 h-12 rounded-lg border-2 font-medium text-sm transition-all
                     ${getSeatColor(seat)}
-                    ${isSelected ? 'ring-2 ring-cyan-500 ring-offset-2' : ''}
-                    ${isBookable && !isHoliday ? 'hover:scale-105 active:scale-95 cursor-pointer' : 'cursor-not-allowed opacity-60'}
+                    ${isSelected ? "ring-2 ring-cyan-500 ring-offset-2" : ""}
+                    ${isBookable && !isHoliday ? "hover:scale-105 active:scale-95 cursor-pointer" : "cursor-not-allowed opacity-60"}
                     disabled:opacity-50 disabled:cursor-not-allowed
                     flex items-center justify-center
                   `}
-                  title={`Seat ${seat.id} - ${seat.type === 'floater' ? 'Floater' : `Squad ${seat.squad_id}`}${seat.is_booked ? ' (Booked)' : ''}${!isBookable && !seat.is_booked ? ' (Cannot book)' : ''}${isHoliday ? ' (Holiday - Booking disabled)' : ''}`}
+                  title={`Seat ${seat.id} - ${seat.type === "floater" ? "Floater" : `Squad ${seat.squad_id} Designated`}${seat.status === "allocated" || seat.status === "booked" ? " (Booked)" : seat.status === "available" && seat.type === "designated" ? " (Released - Available)" : ""}${isHoliday ? " (Holiday - Booking disabled)" : ""}`}
                 >
                   {getSeatLabel(seat)}
                 </button>

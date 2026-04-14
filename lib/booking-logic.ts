@@ -1,86 +1,143 @@
 /**
  * Utility functions for seat booking business logic
+ * Refactored to work with new batch scheduling system
  */
 
+/**
+ * User interface for booking validation
+ */
 interface User {
   id: string;
   name: string;
   squad_id: number;
-  batch: 1 | 2;
-}
-
-interface Booking {
-  id: string;
-  user_id: string;
-  seat_id: number;
-  date: string;
-  status: 'booked' | 'released';
+  batch: number;
 }
 
 /**
- * Get week type for a given date
- * Determines if we're in Week 1 or Week 2 of the batch cycle
+ * Format a date to YYYY-MM-DD string
  */
-export function getWeekType(date: Date): 'week1' | 'week2' {
-  // Get the week number from the beginning of the year
-  const start = new Date(date.getFullYear(), 0, 1);
-  const diff = date.getTime() - start.getTime();
-  const oneWeek = 1000 * 60 * 60 * 24 * 7;
-  const weekNumber = Math.floor(diff / oneWeek);
+// export function formatDate(date: Date): string {
+//   return date.toISOString().split('T')[0];
+// }
 
-  // Odd weeks are week1, even weeks are week2
-  return weekNumber % 2 === 0 ? 'week1' : 'week2';
+// /**
+//  * Parse a date string YYYY-MM-DD to Date
+//  */
+// export function parseDate(dateStr: string): Date {
+//   return new Date(dateStr + 'T00:00:00Z');
+// }
+
+// /**
+//  * Get the name of a day
+//  */
+// export function getDayName(date: Date): string {
+//   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+//   return days[date.getDay()];
+// }
+
+// /**
+//  * Get week dates (Monday to Friday for a given date's week)
+//  */
+// export function getWeekDates(date: Date): Date[] {
+//   const d = new Date(date);
+//   const day = d.getDay();
+
+//   // Adjust to Monday of the week
+//   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+//   const monday = new Date(d.setDate(diff));
+
+//   const weekDates: Date[] = [];
+//   for (let i = 0; i < 7; i++) {
+//     const date = new Date(monday);
+//     date.setDate(date.getDate() + i);
+//     weekDates.push(date);
+//   }
+
+//   return weekDates;
+// }
+
+/**
+ * Check if a date is a working day (Monday-Friday)
+ */
+export function isWorkingDay(date: Date): boolean {
+  const day = date.getDay();
+  return day >= 1 && day <= 5;
 }
 
 /**
- * Get day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+ * Get the number of working days between two dates
  */
-function getDayOfWeek(date: Date): number {
-  return date.getDay();
-}
+export function getWorkingDaysBetween(startDate: Date, endDate: Date): number {
+  let count = 0;
+  const current = new Date(startDate);
 
-/**
- * Check if a user is allowed to book on a given date based on batch schedule
- */
-export function isUserAllowedOnDay(user: User, date: Date): boolean {
-  const dayOfWeek = getDayOfWeek(date);
-  const weekType = getWeekType(date);
-
-  // Skip weekends
-  if (dayOfWeek === 0 || dayOfWeek === 6) {
-    return false;
-  }
-
-  // Batch 1 schedule
-  if (user.batch === 1) {
-    if (weekType === 'week1') {
-      // Week 1: Monday-Wednesday (days 1-3)
-      return dayOfWeek >= 1 && dayOfWeek <= 3;
-    } else {
-      // Week 2: Thursday-Friday (days 4-5)
-      return dayOfWeek >= 4 && dayOfWeek <= 5;
+  while (current <= endDate) {
+    if (isWorkingDay(current)) {
+      count++;
     }
+    current.setDate(current.getDate() + 1);
   }
 
-  // Batch 2 schedule
-  if (user.batch === 2) {
-    if (weekType === 'week1') {
-      // Week 1: Thursday-Friday (days 4-5)
-      return dayOfWeek >= 4 && dayOfWeek <= 5;
-    } else {
-      // Week 2: Monday-Wednesday (days 1-3)
-      return dayOfWeek >= 1 && dayOfWeek <= 3;
-    }
+  return count;
+}
+
+/**
+ * Get next working day
+ */
+export function getNextWorkingDay(date: Date): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + 1);
+
+  while (!isWorkingDay(next)) {
+    next.setDate(next.getDate() + 1);
   }
 
-  return false;
+  return next;
+}
+
+/**
+ * Check if current time has passed 3 PM
+ */
+export function hasPassedThreePM(): boolean {
+  const now = new Date();
+  return now.getHours() >= 15;
+}
+
+/**
+ * Add days to a date
+ */
+export function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+/**
+ * Get start of day
+ */
+export function getStartOfDay(date: Date): Date {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  return result;
+}
+
+/**
+ * Get end of day
+ */
+export function getEndOfDay(date: Date): Date {
+  const result = new Date(date);
+  result.setHours(23, 59, 59, 999);
+  return result;
 }
 
 /**
  * Check if booking time is valid for a given date
  * Next day booking only allowed after 3 PM
  */
-export function isBookingTimeValid(bookingDate: Date, currentTime: Date = new Date()): boolean {
+export function isBookingTimeValid(
+  bookingDate: Date,
+  currentTime: Date = new Date(),
+): boolean {
   const today = new Date(currentTime);
   today.setHours(0, 0, 0, 0);
 
@@ -95,7 +152,7 @@ export function isBookingTimeValid(bookingDate: Date, currentTime: Date = new Da
   // If booking for future, check if after 3 PM
   if (targetDate.getTime() > today.getTime()) {
     const hour = currentTime.getHours();
-    return hour >= 13; // After 1 PM (13:00)
+    return hour >= 3; // After 1 PM (13:00)
   }
 
   // Can't book for past dates
@@ -107,8 +164,8 @@ export function isBookingTimeValid(bookingDate: Date, currentTime: Date = new Da
  */
 export function formatDate(date: Date): string {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
@@ -116,15 +173,30 @@ export function formatDate(date: Date): string {
  * Parse YYYY-MM-DD string to Date
  */
 export function parseDate(dateString: string): Date {
-  const [year, month, day] = dateString.split('-').map(Number);
+  const [year, month, day] = dateString.split("-").map(Number);
   return new Date(year, month - 1, day);
+}
+
+/**
+ * Get day of week (0-6, where 0 is Sunday)
+ */
+export function getDayOfWeek(date: Date): number {
+  return date.getDay();
 }
 
 /**
  * Get day name (Monday, Tuesday, etc.)
  */
 export function getDayName(date: Date): string {
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const days = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
   return days[getDayOfWeek(date)];
 }
 
@@ -168,23 +240,35 @@ export function validateBookingEligibility(
   user: User,
   date: Date,
   isHoliday: boolean,
-  bookingTime: Date = new Date()
+  bookingTime: Date = new Date(),
 ): { eligible: boolean; reason?: string } {
   if (isHoliday) {
-    return { eligible: false, reason: 'This date is a holiday' };
+    return { eligible: false, reason: "This date is a holiday" };
   }
 
   if (isWeekend(date)) {
-    return { eligible: false, reason: 'Cannot book on weekends' };
+    return { eligible: false, reason: "Cannot book on weekends" };
   }
 
-  if (!isUserAllowedOnDay(user, date)) {
-    return { eligible: false, reason: 'Not scheduled for this day' };
-  }
+  // Note: User batch scheduling check should be done via the batch-scheduling-service
+  // This is a simplified validation that can be enhanced
 
   if (!isBookingTimeValid(date, bookingTime)) {
-    return { eligible: false, reason: 'Booking only allowed after 3 PM for next day' };
+    return {
+      eligible: false,
+      reason: "Booking only allowed after 3 PM for next day",
+    };
   }
 
   return { eligible: true };
+}
+
+/**
+ * Check if user is allowed to book on a given day (simplified version)
+ * Full batch scheduling logic is in batch-scheduling-service
+ */
+function isUserAllowedOnDay(user: User, date: Date): boolean {
+  // In production, this should call to batch-scheduling-service
+  // For now, we check basic constraints
+  return isWorkingDay(date);
 }

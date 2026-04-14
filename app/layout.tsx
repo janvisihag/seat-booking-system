@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { UserProvider } from "@/lib/UserContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -41,9 +40,7 @@ export default function RootLayout({
         <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='20' y='30' width='60' height='40' fill='%23333' rx='4'/><rect x='25' y='35' width='50' height='30' fill='%23666' rx='2'/></svg>" />
       </head>
       <body className="min-h-full flex flex-col bg-slate-50 font-mono">
-        <UserProvider>
-          {children}
-        </UserProvider>
+        {children}
       </body>
     </html>
   );

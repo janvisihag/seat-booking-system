@@ -1,174 +1,225 @@
-# 🪑 Seat Booking System - Hybrid Office Management
+# 🪑 SeatFlow - Smart Seat Booking System
 
-A modern, full-stack web application for managing seat bookings in hybrid office environments. Built with Next.js, React, TypeScript, Tailwind CSS, and Supabase.
+A modern seat booking system with automated allocation, batch scheduling, and role-based access control.
 
-## ✨ Features
+## 🚀 Quick Start
 
-- **User Scheduling**: Batch-based scheduling system with configurable office attendance patterns
-- **Seat Booking**: Intuitive seat selection and booking interface
-- **Seat Types**: Support for designated squad seats and floater seats
-- **Holiday Management**: Prevent bookings on holidays
-- **Real-time Status**: View seat availability in real-time
-- **Weekly Overview**: Dashboard showing week schedule and availability
-- **Clean UI**: Modern, responsive design with ShadCN UI components
-
-## 🏗️ Architecture
-
-### Tech Stack
-
-- **Frontend**: Next.js 14+ with App Router, React, TypeScript
-- **Styling**: Tailwind CSS, ShadCN UI
-- **Backend**: Next.js API Routes
-- **Database**: Supabase (PostgreSQL)
-- **State**: React hooks (no Redux needed)
-
-## 🧠 Business Logic
-
-### Batch Schedule
-
-**Batch 1:**
-- Week 1: Monday-Wednesday
-- Week 2: Thursday-Friday
-
-**Batch 2:**
-- Week 1: Thursday-Friday
-- Week 2: Monday-Wednesday
-
-### Booking Rules
-
-✅ **Allowed IF:**
-- User is scheduled that day
-- Not a holiday
-- Seat is available
-- Valid booking time (next day after 3 PM)
-
-❌ **Blocked IF:**
-- Non-designated day
-- Holiday
-- Seat already booked
-- Trying to book before 3 PM (for next day)
-
-## 🚀 Getting Started
-
-### 1. Prerequisites
-
-- Node.js 18+
-- npm or yarn
-- Supabase account
-
-### 2. Setup Supabase
-
-1. Create a new project at [supabase.com](https://supabase.com)
-2. Create the database tables using the SQL from `setup.sql`
-3. Get your **API URL** and **Anon Key** from project settings
-
-### 3. Configure Environment Variables
-
+### 1. Setup Database
 ```bash
-# .env.local
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url_here
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+# Run setup.sql in your Supabase SQL Editor
+# This creates all tables and seeds demo data
 ```
 
-### 4. Run Development Server
-
+### 2. Configure Environment
 ```bash
+# Create .env file with:
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-key
+CRON_SECRET=your-secret-key
+```
+
+### 3. Install & Run
+```bash
+npm install
 npm run dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000)
+### 4. Login
+- Visit `http://localhost:3000`
+- **Users**: `user1` / `user1` (or user2, user3, ... user80)
+- **Admin**: `admin` / `Admin@2026!`
+
+---
+
+## ✨ Features
+
+### For Users
+- 🔐 **Secure Login** - Username/password authentication
+- 📅 **Weekly View** - See available dates (tomorrow onwards)
+- 🪑 **Seat Grid** - Visual seat selection
+  - Blue = Your squad's designated seats
+  - F = Free floater seats (green)
+  - B = Booked seats (red)
+  - C = Cancelled seats (yellow)
+- 📋 **Booking Display** - See your booking below seat grid
+- ❌ **Cancel Anytime** - Cancel bookings with one click
+
+### For Admin
+- 🔧 **Manual Allocation** - Trigger seat allocation on-demand
+- ⏰ **Auto-Allocation** - Runs daily at 3 PM via cron
+- 📊 **System Status** - View allocation logs
+- 🔐 **Secure Access** - Admin-only panel
+
+---
+
+## 🏗️ System Architecture
+
+### Batch Scheduling
+- **Batch 1**: Week 1 (Mon-Wed), Week 2 (Thu-Fri)
+- **Batch 2**: Week 1 (Thu-Fri), Week 2 (Mon-Wed)
+- 5 squads per batch, 8 users per squad
+- 40 designated seats allocated daily
+
+### Seat Types
+- **Designated (80 seats)**: Fixed seats per squad
+- **Floater (10 seats)**: First-come-first-served
+
+### Auto-Allocation
+- Runs daily at 3 PM
+- Allocates seats for next working day
+- Skips weekends and holidays
+- Blocks non-scheduled squads
+
+---
 
 ## 📊 Database Schema
 
-### users
-- `id` (UUID, PK)
-- `name` (TEXT)
-- `squad_id` (INT)
-- `batch` (INT: 1 or 2)
-- `is_designated` (BOOLEAN)
+### Core Tables
+- `squads` - 10 squads (5 per batch)
+- `users` - 80 users (8 per squad)
+- `seats` - 90 seats (80 designated + 10 floater)
+- `auth_users` - Login credentials
 
-### seats
-- `id` (INT, PK)
-- `type` (TEXT: 'designated' | 'floater')
-- `squad_id` (INT, nullable)
-- **Total**: 50 seats (40 designated + 10 floater)
-- **Designated**: 4 seats per squad × 10 squads = 40 seats
+### Booking Tables
+- `seat_allocations` - Designated seat assignments
+- `floater_bookings` - Floater seat bookings
+- `user_leaves` - Leave records
+- `seat_blocking` - Blocked seats
+- `holidays` - Holiday calendar
+- `auto_locks` - Allocation lock tracking
 
-### bookings
-- `id` (UUID, PK)
-- `user_id` (UUID, FK → users)
-- `seat_id` (INT, FK → seats)
-- `date` (DATE)
-- `status` (TEXT: 'booked' | 'released')
+---
 
-### holidays
-- `id` (UUID, PK)
-- `date` (DATE)
+## 🔑 Demo Credentials
 
-## 📖 Pages & Features
+### Regular Users
+```
+user1 / user1
+user2 / user2
+...
+user80 / user80
+```
 
-### Dashboard (`/`)
-- User selector dropdown
-- Weekly overview with seat availability
-- Navigation to booking and schedule pages
-- Real-time seat stats
+### Admin
+```
+admin / Admin@2026!
+```
 
-### Booking (`/booking`)
-- Date picker
-- Interactive 50-seat grid
-- Color-coded seat status (available, booked, floater)
-- Easy seat selection and confirmation
-
-### Schedule (`/schedule`)
-- Weekly schedule view
-- User's batch schedule
-- Current bookings
-- Release booking functionality
-
-## 🎨 UI Components
-
-- **UserSelector**: Dropdown for user selection
-- **SeatGrid**: Visual 50-seat grid with color coding
-- **DateCards**: Week overview with availability stats
-- **ShadCN UI** components for consistency
-
-### Color Legend
-- 🟢 Green: Available seat
-- 🔴 Red: Booked seat
-- 🟡 Yellow: Floater seat
-
-## 🔌 API Endpoints
-
-- `GET /api/seats?date=YYYY-MM-DD` - Get seats by date
-- `POST /api/book` - Book a seat
-- `POST /api/release` - Release a booking
-- `GET /api/schedule?user_id=` - Get user schedule
-- `GET /api/holidays` - Get all holidays
-- `GET /api/users` - Get users list
-
-## 📱 Responsive Design
-
-- Mobile-first approach
-- Touch-friendly interface
-- Optimized for all screen sizes
-
-## 🚀 Deployment
-
-Deploy to Vercel with one click - set environment variables in dashboard.
-
-## 📝 Notes
-
-- No authentication required (demo system)
-- Booking time constraint: Next day after 3 PM
-- Week type determined by ISO week number
-- Floater seats available to all users
+---
 
 ## 🛠️ Tech Stack
 
-- Next.js 14+
-- React 18+
-- TypeScript
-- Tailwind CSS
-- ShadCN UI
-- Supabase
-- PostgreSQL
+- **Frontend**: Next.js 15, React, TypeScript, Tailwind CSS
+- **Backend**: Next.js API Routes
+- **Database**: Supabase (PostgreSQL)
+- **Auth**: Custom username/password
+- **Deployment**: Vercel (with cron jobs)
+
+---
+
+## 📁 Project Structure
+
+```
+app/
+├── login/              # Login page
+├── admin/              # Admin panel
+├── api/                # API routes
+│   ├── auth/          # Authentication
+│   ├── seats/         # Seat management
+│   ├── allocations/   # Seat allocations
+│   └── ...
+└── page.tsx           # User dashboard
+
+lib/
+├── auth.ts            # Auth utilities
+├── supabase.ts        # Database client
+└── *-service.ts       # Business logic
+
+components/
+├── SeatGrid.tsx       # Seat visualization
+├── BookingDialog.tsx  # Booking modal
+└── ui/                # UI components
+```
+
+---
+
+## 🔄 User Flow
+
+1. **Login** → Enter credentials
+2. **Dashboard** → See weekly calendar
+3. **Select Date** → Choose tomorrow or future date
+4. **View Seats** → See available seats (F/B/C for floaters)
+5. **Book Seat** → Click and confirm
+6. **See Booking** → Displayed below seat grid
+7. **Cancel** → Click cancel button if needed
+
+---
+
+## 🎯 Admin Flow
+
+1. **Login** → Use admin credentials
+2. **Admin Panel** → Access system controls
+3. **Trigger Allocation** → Manual seat allocation
+4. **View Status** → Check allocation results
+5. **Logout** → Secure exit
+
+---
+
+## 🕐 Cron Setup (Production)
+
+### Vercel (Recommended)
+Already configured in `vercel.json`:
+```json
+{
+  "crons": [{
+    "path": "/api/cron/daily-allocation",
+    "schedule": "0 15 * * *"
+  }]
+}
+```
+
+### Manual Setup
+1. Deploy to Vercel
+2. Set `CRON_SECRET` environment variable
+3. Cron runs automatically at 3 PM daily
+
+---
+
+## 🧪 Testing
+
+```bash
+# Start dev server
+npm run dev
+
+# Test login
+# Visit http://localhost:3000
+# Login as user1 / user1
+
+# Test booking
+# Select tomorrow's date
+# Click a seat
+# Confirm booking
+# See booking below grid
+
+# Test admin
+# Logout
+# Login as admin / Admin@2026!
+# Click "Trigger Allocation Now"
+# Check success message
+```
+
+---
+
+## 📝 License
+
+MIT
+
+---
+
+## 🤝 Support
+
+For issues or questions, please check the code comments or database schema.
+
+---
+
+**Built with ❤️ using Next.js and Supabase**

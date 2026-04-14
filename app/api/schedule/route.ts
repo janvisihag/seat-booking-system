@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { NextRequest, NextResponse } from 'next/server';
-import { getWeekDates, isUserAllowedOnDay, formatDate } from '@/lib/booking-logic';
+import { getWeekDates, formatDate } from '@/lib/booking-logic';
+import { isBatchScheduledForDate } from '@/lib/batch-scheduling-service';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -14,7 +15,7 @@ export async function GET(request: NextRequest) {
     // Fetch user
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('*')
+      .select('*, squads(batch)')
       .eq('id', userId)
       .single();
 
@@ -26,19 +27,37 @@ export async function GET(request: NextRequest) {
     const today = new Date();
     const weekDates = getWeekDates(today);
 
+    // Get user's squad batch
+    const { data: squad } = await supabase
+      .from('squads')
+      .select('batch')
+      .eq('id', user.squad_id)
+      .single();
+
+    const userBatch = squad?.batch as 1 | 2;
+
     // Build schedule
     const schedule = weekDates.map((date) => ({
       date: formatDate(date),
       day_name: date.toLocaleString('en-US', { weekday: 'long' }),
-      is_scheduled: isUserAllowedOnDay(user, date),
+      is_scheduled: isBatchScheduledForDate(userBatch, date),
     }));
 
-    // Fetch bookings for the week
+    // Fetch allocations for the week
     const startDate = formatDate(weekDates[0]);
-    const endDate = formatDate(weekDates[4]);
+    const endDate = formatDate(weekDates[weekDates.length - 1]); // Use last index instead of hardcoded 6
 
-    const { data: bookings } = await supabase
-      .from('bookings')
+    const { data: allocations } = await supabase
+      .from('seat_allocations')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .eq('status', 'allocated');
+
+    // Also fetch floater bookings
+    const { data: floaterBookings } = await supabase
+      .from('floater_bookings')
       .select('*')
       .eq('user_id', userId)
       .gte('date', startDate)
@@ -50,10 +69,11 @@ export async function GET(request: NextRequest) {
         id: user.id,
         name: user.name,
         squad_id: user.squad_id,
-        batch: user.batch,
+        batch: userBatch,
       },
       schedule,
-      bookings: bookings || [],
+      allocations: allocations || [],
+      bookings: [...(allocations || []), ...(floaterBookings || [])],
     });
   } catch (error) {
     console.error('Error fetching schedule:', error);

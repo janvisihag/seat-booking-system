@@ -1,69 +1,68 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { UserSearch } from '@/components/UserSearch';
+import { useRouter } from 'next/navigation';
+import { formatDate, getWeekDates, getDayName } from '@/lib/booking-logic';
+import { getAuth, clearAuth } from '@/lib/auth';
+import { ChevronLeft, ChevronRight, Calendar, LayoutGrid, LogOut } from 'lucide-react';
 import { SeatGrid } from '@/components/SeatGrid';
 import { BookingDialog } from '@/components/BookingDialog';
-import { MyBookings } from '@/components/MyBookings';
-import { formatDate, getWeekDates, getDayName } from '@/lib/booking-logic';
-import { useUser } from '@/lib/UserContext';
-import { ChevronLeft, ChevronRight, Calendar, Users, Building2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface DateCard {
   date: string;
   day_name: string;
   total_seats: number;
+  allocated_seats: number;
   available_seats: number;
-  booked_seats: number;
 }
 
 interface Seat {
   id: number;
+  seat_number: number;
   type: 'designated' | 'floater';
   squad_id: number | null;
-  is_booked: boolean;
-  booking_id?: string;
+  status: 'allocated' | 'available' | 'blocked' | 'booked';
+  user?: {
+    id: string;
+    squad_id?: number;
+  };
 }
 
-interface Holiday {
+interface UserBooking {
   id: string;
+  seat_id: number;
   date: string;
-}
-
-interface SquadMember {
-  id: string;
-  name: string;
-  squad_id: number;
-  batch: number;
-}
-
-interface Squad {
-  squad_id: number;
-  members: SquadMember[];
-  member_count: number;
-  batch1_count: number;
-  batch2_count: number;
+  status: string;
+  type: 'allocated' | 'floater';
 }
 
 export default function Dashboard() {
-  const { selectedUser, setSelectedUser } = useUser();
+  const router = useRouter();
+  const [auth, setAuth] = useState<any>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedSeat, setSelectedSeat] = useState<Seat | null>(null);
   const [dateStats, setDateStats] = useState<Record<string, DateCard>>({});
   const [seats, setSeats] = useState<Seat[]>([]);
-  const [holidays, setHolidays] = useState<Holiday[]>([]);
-  const [squads, setSquads] = useState<Squad[]>([]);
+  const [holidays, setHolidays] = useState<Array<{ date: string; reason?: string }>>([]);
+  const [userBooking, setUserBooking] = useState<UserBooking | null>(null);
+  const [weekBookings, setWeekBookings] = useState<Record<string, UserBooking>>({});
+  const [showBookingDialog, setShowBookingDialog] = useState(false);
   const [loading, setLoading] = useState(false);
   const [currentWeek, setCurrentWeek] = useState<Date | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [showBookingDialog, setShowBookingDialog] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
 
-  // Initialize current week only on client side
+  // Check auth on mount
   useEffect(() => {
+    const authData = getAuth();
+    if (!authData || authData.role !== 'user') {
+      router.push('/login');
+      return;
+    }
+    setAuth(authData);
     setCurrentWeek(new Date());
     setMounted(true);
-  }, []);
+  }, [router]);
 
   // Fetch holidays
   useEffect(() => {
@@ -71,51 +70,40 @@ export default function Dashboard() {
       try {
         const res = await fetch('/api/holidays');
         const data = await res.json();
-        setHolidays(data.holidays || []);
+        if (data.holidays) {
+          setHolidays(data.holidays);
+        }
       } catch (error) {
         console.error('Error fetching holidays:', error);
       }
     };
+
     fetchHolidays();
   }, []);
 
-  // Fetch squads
+  // Fetch date stats
   useEffect(() => {
-    const fetchSquads = async () => {
-      try {
-        const res = await fetch('/api/squads');
-        const data = await res.json();
-        setSquads(data.squads || []);
-      } catch (error) {
-        console.error('Error fetching squads:', error);
-      }
-    };
-    fetchSquads();
-  }, []);
-
-  // Fetch date statistics when currentWeek changes
-  useEffect(() => {
-    if (!currentWeek) return;
+    if (!currentWeek || !mounted || !auth) return;
 
     const fetchDateStats = async () => {
       try {
         setLoading(true);
         const weekDates = getWeekDates(currentWeek);
         const stats: Record<string, DateCard> = {};
+        const bookings: Record<string, UserBooking> = {};
         
-        // Get today's date at midnight for comparison
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(0, 0, 0, 0);
 
         for (const date of weekDates) {
           const dateStr = formatDate(date);
           const dayName = getDayName(date);
           
-          // Only fetch stats for today and future dates
           const dateOnly = new Date(date);
           dateOnly.setHours(0, 0, 0, 0);
           
-          if (dateOnly >= today) {
+          if (dateOnly >= tomorrow) {
             const res = await fetch(`/api/seats?date=${dateStr}`);
             const data = await res.json();
 
@@ -123,20 +111,27 @@ export default function Dashboard() {
               date: dateStr,
               day_name: dayName,
               total_seats: data.total_seats || 0,
+              allocated_seats: data.allocated_seats || 0,
               available_seats: data.available_seats || 0,
-              booked_seats: data.booked_seats || 0,
             };
+
+            // Fetch user's booking for this date
+            const bookingRes = await fetch(`/api/user-booking?user_id=${auth.user.id}&date=${dateStr}`);
+            const bookingData = await bookingRes.json();
+            if (bookingData.booking) {
+              bookings[dateStr] = bookingData.booking;
+            }
           }
         }
 
         setDateStats(stats);
+        setWeekBookings(bookings);
 
-        // Auto-select first available date (today or later)
         if (!selectedDate) {
           const firstAvailableDate = weekDates.find(d => {
             const dateOnly = new Date(d);
             dateOnly.setHours(0, 0, 0, 0);
-            return dateOnly >= today;
+            return dateOnly >= tomorrow;
           });
           if (firstAvailableDate) {
             setSelectedDate(formatDate(firstAvailableDate));
@@ -150,30 +145,41 @@ export default function Dashboard() {
     };
 
     fetchDateStats();
-  }, [currentWeek, selectedDate]);
+  }, [currentWeek, selectedDate, mounted, auth]);
 
-  // Fetch seats when date changes
+  // Fetch seats and user booking for selected date
   useEffect(() => {
-    if (!selectedDate) return;
+    if (!selectedDate || !auth?.user) return;
 
-    const fetchSeats = async () => {
+    const fetchSeatsAndBooking = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`/api/seats?date=${selectedDate}`);
-        const data = await res.json();
-
-        if (data.seats) {
-          setSeats(data.seats);
+        
+        // Fetch seats
+        const seatsRes = await fetch(`/api/seats?date=${selectedDate}`);
+        const seatsData = await seatsRes.json();
+        if (seatsData.seats) {
+          setSeats(seatsData.seats);
         }
+
+        // Fetch user's booking for this date (checks both allocated and floater)
+        const bookingRes = await fetch(`/api/user-booking?user_id=${auth.user.id}&date=${selectedDate}`);
+        const bookingData = await bookingRes.json();
+        setUserBooking(bookingData.booking || null);
       } catch (err) {
-        console.error('Error fetching seats:', err);
+        console.error('Error fetching data:', err);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchSeats();
-  }, [selectedDate]);
+    fetchSeatsAndBooking();
+  }, [selectedDate, auth]);
+
+  const handleLogout = () => {
+    clearAuth();
+    router.push('/login');
+  };
 
   const goToPreviousWeek = () => {
     if (!currentWeek) return;
@@ -193,15 +199,115 @@ export default function Dashboard() {
     setCurrentWeek(new Date());
   };
 
-  // Don't render until mounted to avoid hydration mismatch
-  if (!mounted || !currentWeek) {
+  const handleSeatClick = (seat: Seat) => {
+    setSelectedSeat(seat);
+    setShowBookingDialog(true);
+  };
+
+  const handleBookingSuccess = async () => {
+    if (selectedDate && auth?.user) {
+      // Refresh seats
+      const seatsRes = await fetch(`/api/seats?date=${selectedDate}`);
+      const seatsData = await seatsRes.json();
+      if (seatsData.seats) setSeats(seatsData.seats);
+      
+      // Refresh current date booking
+      const bookingRes = await fetch(`/api/user-booking?user_id=${auth.user.id}&date=${selectedDate}`);
+      const bookingData = await bookingRes.json();
+      setUserBooking(bookingData.booking || null);
+
+      // Refresh week bookings
+      if (currentWeek) {
+        const weekDates = getWeekDates(currentWeek);
+        const bookings: Record<string, UserBooking> = {};
+        
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(0, 0, 0, 0);
+
+        for (const date of weekDates) {
+          const dateStr = formatDate(date);
+          const dateOnly = new Date(date);
+          dateOnly.setHours(0, 0, 0, 0);
+          
+          if (dateOnly >= tomorrow) {
+            const res = await fetch(`/api/user-booking?user_id=${auth.user.id}&date=${dateStr}`);
+            const data = await res.json();
+            if (data.booking) {
+              bookings[dateStr] = data.booking;
+            }
+          }
+        }
+        setWeekBookings(bookings);
+      }
+    }
+    setShowBookingDialog(false);
+  };
+
+  const handleCancelBooking = async () => {
+    if (!userBooking || !auth?.user) return;
+
+    if (!confirm('Are you sure you want to cancel this booking?')) return;
+
+    try {
+      const res = await fetch('/api/release', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          booking_id: userBooking.id,
+          user_id: auth.user.id,
+        }),
+      });
+
+      if (res.ok) {
+        // Refresh current booking
+        setUserBooking(null);
+        
+        // Refresh seats
+        if (selectedDate) {
+          const seatsRes = await fetch(`/api/seats?date=${selectedDate}`);
+          const seatsData = await seatsRes.json();
+          if (seatsData.seats) setSeats(seatsData.seats);
+        }
+
+        // Refresh week bookings
+        if (currentWeek) {
+          const weekDates = getWeekDates(currentWeek);
+          const bookings: Record<string, UserBooking> = {};
+          
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          tomorrow.setHours(0, 0, 0, 0);
+
+          for (const date of weekDates) {
+            const dateStr = formatDate(date);
+            const dateOnly = new Date(date);
+            dateOnly.setHours(0, 0, 0, 0);
+            
+            if (dateOnly >= tomorrow) {
+              const bookingRes = await fetch(`/api/user-booking?user_id=${auth.user.id}&date=${dateStr}`);
+              const bookingData = await bookingRes.json();
+              if (bookingData.booking) {
+                bookings[dateStr] = bookingData.booking;
+              }
+            }
+          }
+          setWeekBookings(bookings);
+        }
+      }
+    } catch (error) {
+      console.error('Error cancelling booking:', error);
+    }
+  };
+
+  if (!mounted || !currentWeek || !auth) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 bg-cyan-500 rounded-lg flex items-center justify-center mx-auto mb-4">
-            <Building2 className="w-5 h-5 text-white" />
+            <Calendar className="w-5 h-5 text-white" />
           </div>
-          <p className="text-gray-600">Loading SeatFlow...</p>
+          <p className="text-gray-600">Loading...</p>
         </div>
       </div>
     );
@@ -211,65 +317,18 @@ export default function Dashboard() {
   const weekStart = formatDate(weekDates[0]);
   const weekEnd = formatDate(weekDates[4]);
   
-  // Filter dates to show only today and future
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
   
   const availableDates = weekDates.filter(date => {
     const dateOnly = new Date(date);
     dateOnly.setHours(0, 0, 0, 0);
-    return dateOnly >= today;
+    return dateOnly >= tomorrow;
   });
 
   const isHoliday = (dateStr: string) => {
     return holidays.some(h => h.date === dateStr);
-  };
-
-  const handleSeatClick = (seat: Seat) => {
-    if (!selectedUser) {
-      alert('Please select a user first!');
-      return;
-    }
-    setSelectedSeat(seat);
-    setShowBookingDialog(true);
-  };
-
-  const handleBookingSuccess = () => {
-    // Refresh seats data
-    if (selectedDate) {
-      fetch(`/api/seats?date=${selectedDate}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.seats) {
-            setSeats(data.seats);
-          }
-        });
-    }
-    
-    // Refresh date stats
-    if (currentWeek) {
-      const weekDates = getWeekDates(currentWeek);
-      weekDates.forEach(date => {
-        const dateStr = formatDate(date);
-        fetch(`/api/seats?date=${dateStr}`)
-          .then(res => res.json())
-          .then(data => {
-            setDateStats(prev => ({
-              ...prev,
-              [dateStr]: {
-                date: dateStr,
-                day_name: getDayName(date),
-                total_seats: data.total_seats || 0,
-                available_seats: data.available_seats || 0,
-                booked_seats: data.booked_seats || 0,
-              }
-            }));
-          });
-      });
-    }
-    
-    // Trigger refresh of MyBookings component by updating a key
-    setRefreshKey(prev => prev + 1);
   };
 
   return (
@@ -278,36 +337,31 @@ export default function Dashboard() {
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center gap-4">
-            {/* Logo */}
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-cyan-500 rounded-lg flex items-center justify-center">
-                <Building2 className="w-6 h-6 text-white" />
+                <Calendar className="w-6 h-6 text-white" />
               </div>
               <div>
                 <h1 className="text-xl font-bold text-gray-900">SeatFlow</h1>
-                <p className="text-xs text-gray-500">Smart Seat Booking System</p>
+                <p className="text-xs text-gray-500">Welcome, {auth.user?.name}</p>
               </div>
             </div>
 
-            {/* Date Range and Navigation */}
             <div className="flex-1 flex items-center justify-center gap-3">
               <button
                 onClick={goToPreviousWeek}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Previous week"
               >
                 <ChevronLeft className="w-5 h-5 text-gray-600" />
               </button>
               <div className="text-center">
                 <div className="text-sm font-semibold text-gray-900">
-                  {weekStart} - {weekEnd}, {currentWeek.getFullYear()}
+                  {weekStart} - {weekEnd}
                 </div>
-                <div className="text-xs text-gray-500">Cycle Week 1</div>
               </div>
               <button
                 onClick={goToNextWeek}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Next week"
               >
                 <ChevronRight className="w-5 h-5 text-gray-600" />
               </button>
@@ -318,6 +372,15 @@ export default function Dashboard() {
                 Today
               </button>
             </div>
+
+            <Button
+              onClick={handleLogout}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </Button>
           </div>
         </div>
       </header>
@@ -330,9 +393,8 @@ export default function Dashboard() {
             <h2 className="text-base font-semibold text-gray-900">Week Overview</h2>
           </div>
 
-          {/* Week Days */}
           <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${availableDates.length}, minmax(0, 1fr))` }}>
-            {availableDates.map((date, index) => {
+            {availableDates.map((date) => {
               const dateStr = formatDate(date);
               const stats = dateStats[dateStr];
               const isSelected = selectedDate === dateStr;
@@ -342,9 +404,6 @@ export default function Dashboard() {
               const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
               const monthName = monthNames[date.getMonth()];
               const holiday = isHoliday(dateStr);
-              
-              const availabilityPercent = stats && stats.total_seats > 0 ? 
-                Math.round((stats.available_seats / stats.total_seats) * 100) : 0;
 
               return (
                 <button
@@ -370,15 +429,15 @@ export default function Dashboard() {
                   )}
                   
                   <div className="space-y-1">
-                    <div className="text-xs text-gray-600 font-medium">B1</div>
-                    <div className="flex items-center gap-1">
-                      <div className="text-sm font-bold text-cyan-600">
-                        {availabilityPercent}%
+                    {weekBookings[dateStr] ? (
+                      <div className="inline-block px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded font-medium">
+                        Seat #{weekBookings[dateStr].seat_id}
                       </div>
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {stats ? `${stats.available_seats} free, ${stats.booked_seats} used` : 'Loading...'}
-                    </div>
+                    ) : (
+                      <div className="text-xs text-gray-500">
+                        {stats ? `${stats.available_seats} free` : 'Loading...'}
+                      </div>
+                    )}
                   </div>
                 </button>
               );
@@ -386,190 +445,71 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 mb-6 border-b border-gray-200 overflow-x-auto">
-          {availableDates.map((date, index) => {
-            const dateStr = formatDate(date);
-            const isActive = selectedDate === dateStr;
-            const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-            const actualDayIndex = weekDates.findIndex(d => formatDate(d) === dateStr);
-            const dayNumber = date.getDate();
-            
-            return (
-              <button
-                key={dateStr}
-                onClick={() => setSelectedDate(dateStr)}
-                className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-                  isActive
-                    ? 'text-cyan-600 border-b-2 border-cyan-600'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
+        {/* Floor Plan */}
+        {selectedDate && (
+          <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+            <div className="flex items-center gap-2 mb-4">
+              <LayoutGrid className="w-5 h-5 text-gray-600" />
+              <h2 className="text-base font-semibold text-gray-900">
+                Floor Plan — {selectedDate}
+              </h2>
+            </div>
+
+            <SeatGrid
+              seats={seats}
+              onSeatClick={handleSeatClick}
+              selectedSeat={selectedSeat}
+              isLoading={loading}
+              userSquad={auth.user?.squad_id}
+              isHoliday={isHoliday(selectedDate)}
+            />
+          </div>
+        )}
+
+        {/* User's Booking for Selected Date */}
+        {selectedDate && userBooking && (
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4">Your Booking for {selectedDate}</h3>
+            <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center gap-3">
+                <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                  userBooking.type === 'allocated' ? 'bg-blue-200' : 'bg-green-200'
+                }`}>
+                  <span className="text-lg font-bold text-gray-900">
+                    {userBooking.seat_id}
+                  </span>
+                </div>
+                <div>
+                  <div className="font-medium text-gray-900">Seat #{userBooking.seat_id}</div>
+                  <div className="text-sm text-gray-600">
+                    {userBooking.type === 'allocated' ? 'Designated Seat' : 'Floater Seat'}
+                  </div>
+                </div>
+              </div>
+              <Button
+                onClick={handleCancelBooking}
+                variant="outline"
+                className="text-red-600 border-red-200 hover:bg-red-50"
               >
-                {dayNames[actualDayIndex]} {dayNumber}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Main Content */}
-          <div className="lg:col-span-3 space-y-6">
-            {/* Floor Plan */}
-            {selectedDate && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <Building2 className="w-5 h-5 text-gray-600" />
-                  <h2 className="text-base font-semibold text-gray-900">
-                    Floor Plan — Monday, {selectedDate}
-                  </h2>
-                </div>
-
-                {/* Legend */}
-                <div className="flex flex-wrap gap-4 mb-6 text-xs">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-blue-200 border border-blue-300 rounded"></div>
-                    <span className="text-gray-600">Designated</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-green-200 border border-green-300 rounded"></div>
-                    <span className="text-gray-600">Floater (Available)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-red-200 border border-red-300 rounded"></div>
-                    <span className="text-gray-600">Booked</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-yellow-200 border border-yellow-300 rounded"></div>
-                    <span className="text-gray-600">Vacation/Release</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-gray-300 border border-gray-400 rounded"></div>
-                    <span className="text-gray-600">Blocked</span>
-                  </div>
-                </div>
-
-                <SeatGrid
-                  seats={seats}
-                  onSeatClick={handleSeatClick}
-                  selectedSeat={selectedSeat}
-                  isLoading={loading}
-                  userSquad={selectedUser?.squad_id}
-                  isHoliday={isHoliday(selectedDate)}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Squad Schedule Sidebar */}
-          <div className="lg:col-span-1 space-y-6">
-            {/* User Search */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Select User</h3>
-              <UserSearch onSelect={setSelectedUser} selectedUser={selectedUser} />
-              
-              {selectedUser && (
-                <div className="mt-3 p-3 bg-cyan-50 border border-cyan-200 rounded-lg">
-                  <div className="text-xs text-cyan-700">
-                    <div className="font-semibold mb-1">Selected User</div>
-                    <div>Squad {selectedUser.squad_id} • Batch {selectedUser.batch}</div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* My Bookings */}
-            <MyBookings key={refreshKey} user={selectedUser} />
-
-            {/* Squad Schedule */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <div className="flex items-center gap-2 mb-4">
-                <Users className="w-5 h-5 text-gray-600" />
-                <h3 className="text-sm font-semibold text-gray-900">Squad Schedule — Week 1</h3>
-              </div>
-
-              <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
-                {squads.length > 0 ? (
-                  squads.map((squad) => {
-                    const seatRanges = [
-                      '1-4', '5-8', '9-12', '13-16', '17-20',
-                      '21-24', '25-28', '29-32', '33-36', '37-40'
-                    ];
-                    const seatRange = seatRanges[squad.squad_id - 1];
-                    
-                    // Calculate user range based on squad
-                    const startUser = (squad.squad_id - 1) * 8 + 1;
-                    const endUser = squad.squad_id * 8;
-                    const userRange = `User ${startUser}-${endUser}`;
-                    
-                    return (
-                      <div key={squad.squad_id} className="border border-gray-200 rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-sm font-medium text-gray-900">Squad {squad.squad_id}</h4>
-                          <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded-full font-medium">
-                            {squad.member_count} members
-                          </span>
-                        </div>
-                        
-                        <div className="grid grid-cols-5 gap-1 mb-2">
-                          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((day, dayIndex) => {
-                            // Batch 1: Mon-Wed (Week 1), Thu-Fri (Week 2)
-                            // Batch 2: Thu-Fri (Week 1), Mon-Wed (Week 2)
-                            // For Week 1 display:
-                            const isBatch1Day = dayIndex < 3; // Mon-Wed
-                            const isBatch2Day = dayIndex >= 3; // Thu-Fri
-                            
-                            return (
-                              <div
-                                key={day}
-                                className={`text-xs text-center py-1 rounded font-medium ${
-                                  isBatch1Day
-                                    ? 'bg-blue-100 text-blue-700'
-                                    : 'bg-green-100 text-green-700'
-                                }`}
-                              >
-                                {day}
-                              </div>
-                            );
-                          })}
-                        </div>
-                        
-                        <div className="text-xs text-gray-600 space-y-1">
-                          <div>Seats: {seatRange}</div>
-                          <div>Members: {userRange}</div>
-                          <div className="flex gap-2 mt-1">
-                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
-                              B1: {squad.batch1_count}
-                            </span>
-                            <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs">
-                              B2: {squad.batch2_count}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-center py-4 text-gray-500 text-sm">
-                    Loading squads...
-                  </div>
-                )}
-              </div>
+                Cancel Booking
+              </Button>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Booking Dialog */}
-      {showBookingDialog && selectedSeat && selectedUser && selectedDate && (
+      {showBookingDialog && selectedSeat && auth.user && selectedDate && (
         <BookingDialog
           seat={selectedSeat}
-          user={selectedUser}
+          user={auth.user}
           date={selectedDate}
           onClose={() => {
             setShowBookingDialog(false);
             setSelectedSeat(null);
           }}
           onSuccess={handleBookingSuccess}
+          userHasBooking={!!userBooking}
         />
       )}
     </div>
